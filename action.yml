@@ -1,0 +1,48 @@
+name: Create missing release
+description: Create a GitHub release for a given tag if the release does not already exist
+
+inputs:
+  tag:
+    description: The tag to create a release for
+    required: true
+  github-token:
+    description: GitHub token used to authenticate API requests
+    required: true
+
+runs:
+  using: "composite"
+  steps:
+    - uses: actions/github-script@v8
+      env:
+        INPUT_TAG: ${{ inputs.tag }}
+      with:
+        github-token: ${{ inputs.github-token }}
+        script: |
+          const tag_name = process.env.INPUT_TAG.replace(/^refs\/tags\//, '');
+
+          try {
+            const release = await github.rest.repos.getReleaseByTag({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              tag: tag_name,
+            });
+
+            console.log(`Release already exists for tag: ${release.data.name}`);
+            return;
+          } catch (error) {
+            if (error.status !== 404) {
+              throw error;
+            }
+          }
+
+          const release = await github.rest.repos.createRelease({
+            owner: context.repo.owner,
+            repo: context.repo.repo,
+            name: `Release ${tag_name}`,
+            tag_name: tag_name,
+            draft: false,
+            prerelease: false,
+            generate_release_notes: true,
+          });
+
+          console.log(`Created release for tag: ${release.data.name}`);
