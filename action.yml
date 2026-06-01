@@ -8,6 +8,10 @@ inputs:
   github-token:
     description: GitHub token used to authenticate API requests
     required: true
+  artifacts:
+    description: Newline-separated list of glob patterns for files to attach as release assets
+    required: false
+    default: ''
 
 runs:
   using: "composite"
@@ -15,34 +19,72 @@ runs:
     - uses: actions/github-script@v8
       env:
         INPUT_TAG: ${{ inputs.tag }}
+        INPUT_ARTIFACTS: ${{ inputs.artifacts }}
       with:
         github-token: ${{ inputs.github-token }}
         script: |
           const tag_name = process.env.INPUT_TAG.replace(/^refs\/tags\//, '');
+          const artifactPatterns = process.env.INPUT_ARTIFACTS;
+
+          let release;
 
           try {
-            const release = await github.rest.repos.getReleaseByTag({
+            release = await github.rest.repos.getReleaseByTag({
               owner: context.repo.owner,
               repo: context.repo.repo,
               tag: tag_name,
             });
 
             console.log(`Release already exists for tag: ${release.data.name}`);
-            return;
           } catch (error) {
             if (error.status !== 404) {
               throw error;
             }
+
+            release = await github.rest.repos.createRelease({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              name: `Release ${tag_name}`,
+              tag_name: tag_name,
+              draft: false,
+              prerelease: false,
+              generate_release_notes: true,
+            });
+
+            console.log(`Created release for tag: ${release.data.name}`);
           }
 
-          const release = await github.rest.repos.createRelease({
-            owner: context.repo.owner,
-            repo: context.repo.repo,
-            name: `Release ${tag_name}`,
-            tag_name: tag_name,
-            draft: false,
-            prerelease: false,
-            generate_release_notes: true,
-          });
+          if (artifactPatterns) {
+            const fs = require('fs');
+            const path = require('path');
 
-          console.log(`Created release for tag: ${release.data.name}`);
+            for (const pattern of artifactPatterns.split('\n').map(p => p.trim()).filter(Boolean)) {
+              const globber = await glob.create(pattern);
+              const files = await globber.glob();
+
+              for (const file of files) {
+                const stat = fs.statSync(file);
+                if (!stat.isFile()) continue;
+
+                const fileName = path.basename(file);
+                const fileContent = fs.readFileSync(file);
+                const fileSize = stat.size;
+
+                console.log(`Uploading artifact: ${fileName}`);
+
+                await github.rest.repos.uploadReleaseAsset({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  release_id: release.data.id,
+                  name: fileName,
+                  data: fileContent,
+                  headers: {
+                    'content-type': 'application/octet-stream',
+                    'content-length': fileSize,
+                  },
+                });
+
+                console.log(`Uploaded artifact: ${fileName}`);
+              }
+            }
+          }
