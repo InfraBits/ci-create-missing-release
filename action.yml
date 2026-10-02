@@ -13,10 +13,16 @@ inputs:
     required: false
     default: ''
 
+outputs:
+  created:
+    description: Whether a new release was created ('true' or 'false')
+    value: ${{ steps.create-release.outputs.created }}
+
 runs:
   using: "composite"
   steps:
-    - uses: actions/github-script@v8
+    - id: create-release
+      uses: actions/github-script@v8
       env:
         INPUT_TAG: ${{ inputs.tag }}
         INPUT_ARTIFACTS: ${{ inputs.artifacts }}
@@ -27,6 +33,7 @@ runs:
           const artifactPatterns = process.env.INPUT_ARTIFACTS;
 
           let release;
+          let created = false;
 
           try {
             release = await github.rest.repos.getReleaseByTag({
@@ -51,8 +58,12 @@ runs:
               generate_release_notes: true,
             });
 
+            created = true;
+
             console.log(`Created release for tag: ${release.data.name}`);
           }
+
+          core.setOutput('created', created);
 
           if (artifactPatterns) {
             const fs = require('fs');

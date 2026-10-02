@@ -2,6 +2,12 @@
 
 Create a GitHub release for a given tag if the release does not already exist.
 
+## Outputs
+
+| Name      | Description                                            |
+|-----------|---------------------------------------------------------|
+| `created` | Whether a new release was created (`true` or `false`)   |
+
 ## Example Usage
 
 ```yaml
